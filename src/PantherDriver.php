@@ -553,31 +553,36 @@ JS
     }
 
     /**
-     * @param string|null $modifier
-     *
      * @inheritDoc
      */
     public function keyPress($xpath, $char, $modifier = null) : void
     {
-        $this->focus($xpath);
         $keyboard = $this->client->getKeyboard();
 
+        $this->focus($xpath);
+
         if ($modifier !== null) {
-            $keyboard->sendKeys(self::getModifierKey($modifier));
+            $modifier = self::getModifierKey($modifier);
+
+            $keyboard
+                ->pressKey($modifier)
+                ->sendKeys(self::getCharKey($char))
+                ->releaseKey($modifier);
+
+            return;
         }
 
         $keyboard->sendKeys(self::getCharKey($char));
     }
 
     /**
-     * @param string|null $modifier
-     *
      * @inheritDoc
      */
     public function keyDown($xpath, $char, $modifier = null) : void
     {
-        $this->focus($xpath);
         $keyboard = $this->client->getKeyboard();
+
+        $this->focus($xpath);
 
         if ($modifier !== null) {
             $keyboard->pressKey(self::getModifierKey($modifier));
@@ -587,20 +592,19 @@ JS
     }
 
     /**
-     * @param string|null $modifier
-     *
      * @inheritDoc
      */
     public function keyUp($xpath, $char, $modifier = null) : void
     {
-        $this->focus($xpath);
         $keyboard = $this->client->getKeyboard();
+
+        $this->focus($xpath);
+
+        $keyboard->releaseKey(self::getCharKey($char));
 
         if ($modifier !== null) {
             $keyboard->releaseKey(self::getModifierKey($modifier));
         }
-
-        $keyboard->releaseKey(self::getCharKey($char));
     }
 
     /**

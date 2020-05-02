@@ -14,8 +14,25 @@ final class EventsTest extends MinkEventsTest
      */
     public function testKeyboardEvents($modifier, $eventProperties) : void
     {
-        self::markTestIncomplete(
-            'This test is still buggy.'
-        );
+        $this->getSession()->visit($this->pathTo('/js_test.html'));
+        $webAssert = $this->getAssertSession();
+
+        $input1 = $webAssert->elementExists('css', '.elements input.input.first');
+        $input2 = $webAssert->elementExists('css', '.elements input.input.second');
+        $input3 = $webAssert->elementExists('css', '.elements input.input.third');
+        $event  = $webAssert->elementExists('css', '.elements .text-event');
+
+        $input1->keyDown('u', $modifier);
+        self::assertEquals('key downed:' . $eventProperties, $event->getText());
+
+        $input2->keyPress('r', $modifier);
+        if ($modifier === 'shift') {
+            self::assertEquals('key pressed:82 / ' . $eventProperties, $event->getText());
+        } else {
+            self::assertEquals('key pressed:114 / ' . $eventProperties, $event->getText());
+        }
+
+        $input3->keyUp(85, $modifier);
+        self::assertEquals('key upped:85 / ' . $eventProperties, $event->getText());
     }
 }
