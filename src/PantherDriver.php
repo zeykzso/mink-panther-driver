@@ -596,15 +596,16 @@ JS
      */
     public function keyUp($xpath, $char, $modifier = null) : void
     {
-        $keyboard = $this->client->getKeyboard();
+        $action  = $this->createWebDriverAction();
+        $element = $this->findElement($xpath);
 
-        $this->focus($xpath);
-
-        $keyboard->releaseKey(self::getCharKey($char));
+        $action->keyUp($element, self::getCharKey($char));
 
         if ($modifier !== null) {
-            $keyboard->releaseKey(self::getModifierKey($modifier));
+            $action->keyUp($element, self::getModifierKey($modifier));
         }
+
+        $action->perform();
     }
 
     /**
