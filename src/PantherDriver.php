@@ -16,13 +16,13 @@ use Facebook\WebDriver\Interactions\WebDriverActions;
 use Facebook\WebDriver\Internal\WebDriverLocatable;
 use Facebook\WebDriver\JavaScriptExecutor;
 use Facebook\WebDriver\WebDriverBy;
-use Facebook\WebDriver\WebDriverCapabilities;
 use Facebook\WebDriver\WebDriverDimension;
 use Facebook\WebDriver\WebDriverElement;
 use Facebook\WebDriver\WebDriverHasInputDevices;
 use Facebook\WebDriver\WebDriverKeys;
 use Facebook\WebDriver\WebDriverRadios;
 use Facebook\WebDriver\WebDriverSelectInterface;
+use InvalidArgumentException;
 use LogicException;
 use RuntimeException;
 use Symfony\Component\BrowserKit\Cookie;
@@ -33,6 +33,7 @@ use Symfony\Component\Panther\DomCrawler\Field\ChoiceFormField;
 use Symfony\Component\Panther\DomCrawler\Field\FileFormField;
 use Symfony\Component\Panther\DomCrawler\Field\InputFormField;
 use Symfony\Component\Panther\DomCrawler\Field\TextareaFormField;
+use Symfony\Component\Panther\PantherTestCaseTrait;
 use function array_merge;
 use function chr;
 use function count;
@@ -52,14 +53,31 @@ use const PHP_EOL;
 
 final class PantherDriver extends CoreDriver
 {
-    /** @var Client */
-    private $client;
-    /** @var bool */
-    private $isStarted = false;
+    use PantherTestCaseTrait;
 
-    public function __construct(Client $client)
+    public const CHROME   = 'chrome';
+    public const FIREFOX  = 'firefox';
+    public const SELENIUM = 'selenium';
+
+    /** @var string */
+    private $driver;
+    /**
+     * @var mixed[]
+     * @psalm-var array{host?: string|null, capabilities?: \Facebook\WebDriver\WebDriverCapabilities|null}
+     */
+    private $options;
+    /** @var Client|null */
+    private $client;
+
+    /**
+     * @param mixed[] $options
+     *
+     * @psalm-param array{host?: string|null, capabilities?: \Facebook\WebDriver\WebDriverCapabilities|null} $options
+     */
+    public function __construct(string $driver = self::CHROME, array $options = [])
     {
-        $this->client = $client;
+        $this->driver  = $driver;
+        $this->options = $options;
     }
 
     public function __destruct()
@@ -67,59 +85,40 @@ final class PantherDriver extends CoreDriver
         $this->stop();
     }
 
-    /**
-     * @param list<string>                                                     $arguments
-     * @param array{scheme?: string, host?: string, port?: int, path?: string} $options
-     */
-    public static function createChromeDriver(
-        ?string $chromeDriverBinary = null,
-        ?array $arguments = null,
-        array $options = []
-    ) : self {
-        return new self(Client::createChromeClient($chromeDriverBinary, $arguments, $options));
-    }
-
-    /**
-     * @param list<string>                                                     $arguments
-     * @param array{scheme?: string, host?: string, port?: int, path?: string} $options
-     */
-    public static function createFirefoxDriver(
-        ?string $geckodriverBinary = null,
-        ?array $arguments = null,
-        array $options = []
-    ) : self {
-        return new self(Client::createFirefoxClient($geckodriverBinary, $arguments, $options));
-    }
-
-    public static function createSeleniumDriver(
-        ?string $host = null,
-        ?WebDriverCapabilities $capabilities = null
-    ) : self {
-        return new self(Client::createSeleniumClient($host, $capabilities));
-    }
-
     public function start() : void
     {
-        $this->client->start();
+        switch ($this->driver) {
+            case self::CHROME:
+            case self::FIREFOX:
+                $this->client = self::createPantherClient(array_merge($this->options, ['browser' => $this->driver]), []);
+                break;
+            case self::SELENIUM:
+                $this->client = Client::createSeleniumClient($this->options['host'] ?? null, $this->options['capabilities'] ?? null);
+                break;
+            default:
+                throw new InvalidArgumentException(sprintf('Driver "%s" is not supported.', $this->driver));
+        }
 
-        $this->isStarted = true;
+        $this->client->start();
     }
 
     public function isStarted() : bool
     {
-        return $this->isStarted;
+        return $this->client !== null;
     }
 
     public function stop() : void
     {
-        $this->isStarted = false;
+        self::stopWebServer();
 
-        $this->client->quit();
+        $this->client = null;
     }
 
     public function reset() : void
     {
-        $this->client->getCookieJar()->clear();
+        $this->ensureClientIsStarted();
+
+        $this->client->restart();
     }
 
     /**
@@ -127,26 +126,36 @@ final class PantherDriver extends CoreDriver
      */
     public function visit($url) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->get($url);
     }
 
     public function getCurrentUrl() : string
     {
+        $this->ensureClientIsStarted();
+
         return $this->client->getCurrentURL();
     }
 
     public function reload() : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->reload();
     }
 
     public function forward() : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->forward();
     }
 
     public function back() : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->back();
     }
 
@@ -155,6 +164,8 @@ final class PantherDriver extends CoreDriver
      */
     public function switchToWindow($name = null) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->switchTo()->window($name ?? '');
         $this->client->refreshCrawler();
     }
@@ -164,6 +175,8 @@ final class PantherDriver extends CoreDriver
      */
     public function switchToIFrame($name = null) : void
     {
+        $this->ensureClientIsStarted();
+
         if ($name === null) {
             $this->client->switchTo()->defaultContent();
             $this->client->refreshCrawler();
@@ -186,6 +199,8 @@ final class PantherDriver extends CoreDriver
      */
     public function setCookie($name, $value = null) : void
     {
+        $this->ensureClientIsStarted();
+
         if ($value === null) {
             $this->client->getCookieJar()->expire($name);
 
@@ -200,6 +215,8 @@ final class PantherDriver extends CoreDriver
      */
     public function getCookie($name) : ?string
     {
+        $this->ensureClientIsStarted();
+
         $cookie = $this->client->getCookieJar()->get($name);
         if ($cookie === null) {
             return null;
@@ -210,6 +227,8 @@ final class PantherDriver extends CoreDriver
 
     public function getContent() : string
     {
+        $this->ensureClientIsStarted();
+
         return str_replace(
             ["\r", "\r\n", "\n"],
             PHP_EOL,
@@ -219,6 +238,8 @@ final class PantherDriver extends CoreDriver
 
     public function getScreenshot() : string
     {
+        $this->ensureClientIsStarted();
+
         return $this->client->takeScreenshot();
     }
 
@@ -229,11 +250,15 @@ final class PantherDriver extends CoreDriver
      */
     public function getWindowNames() : array
     {
+        $this->ensureClientIsStarted();
+
         return $this->client->getWindowHandles();
     }
 
     public function getWindowName() : string
     {
+        $this->ensureClientIsStarted();
+
         return $this->client->getWindowHandle();
     }
 
@@ -367,6 +392,8 @@ final class PantherDriver extends CoreDriver
      */
     public function setValue($xpath, $value) : void
     {
+        $this->ensureClientIsStarted();
+
         $element = $this->findElement($xpath);
 
         if ($element->getTagName() === 'input' && in_array($element->getAttribute('type'), ['date', 'color', 'datetime-local', 'month', 'time'], true)) {
@@ -481,6 +508,8 @@ JS
      */
     public function click($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->getMouse()->click($this->toCoordinates($xpath));
         $this->client->refreshCrawler();
     }
@@ -490,6 +519,8 @@ JS
      */
     public function doubleClick($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->getMouse()->doubleClick($this->toCoordinates($xpath));
     }
 
@@ -498,6 +529,8 @@ JS
      */
     public function rightClick($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->getMouse()->contextClick($this->toCoordinates($xpath));
     }
 
@@ -530,6 +563,8 @@ JS
      */
     public function mouseOver($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->getMouse()->mouseMove($this->toCoordinates($xpath));
     }
 
@@ -538,6 +573,8 @@ JS
      */
     public function focus($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->getMouse()->click($this->toCoordinates($xpath));
     }
 
@@ -619,6 +656,8 @@ JS
      */
     public function executeScript($script) : void
     {
+        $this->ensureClientIsStarted();
+
         if (preg_match('/^function[\s\(]/', $script) === 1) {
             $script = preg_replace('/;$/', '', $script);
             $script = '(' . $script . ')';
@@ -636,6 +675,8 @@ JS
      */
     public function evaluateScript($script)
     {
+        $this->ensureClientIsStarted();
+
         if (strpos(trim($script), 'return ') !== 0) {
             $script = 'return ' . $script;
         }
@@ -652,6 +693,8 @@ JS
      */
     public function wait($timeout, $condition) : bool
     {
+        $this->ensureClientIsStarted();
+
         $seconds = (int) round($timeout / 1000.0);
         $wait    = $this->client->wait($seconds);
 
@@ -675,6 +718,8 @@ JS
      */
     public function resizeWindow($width, $height, $name = null) : void
     {
+        $this->ensureClientIsStarted();
+
         if ($name !== null) {
             throw new UnsupportedDriverActionException('Named windows are not supported.', $this);
         }
@@ -690,6 +735,8 @@ JS
      */
     public function maximizeWindow($name = null) : void
     {
+        $this->ensureClientIsStarted();
+
         if ($name !== null) {
             throw new UnsupportedDriverActionException('Named windows are not supported.', $this);
         }
@@ -705,6 +752,8 @@ JS
      */
     public function submitForm($xpath) : void
     {
+        $this->ensureClientIsStarted();
+
         $this->client->submit(
             $this->getFilteredCrawlerBy($xpath)->form()
         );
@@ -737,6 +786,8 @@ JS
      */
     private function getCrawler() : Crawler
     {
+        $this->ensureClientIsStarted();
+
         $crawler = $this->client->getCrawler();
 
         if ($crawler === null) {
@@ -785,6 +836,8 @@ JS
      */
     private function createWebDriverAction() : WebDriverActions
     {
+        $this->ensureClientIsStarted();
+
         $webDriver = $this->client->getWebDriver();
         if (! $webDriver instanceof WebDriverHasInputDevices) {
             throw new UnsupportedDriverActionException('This action is not supported by %s.', $this);
@@ -802,11 +855,27 @@ JS
      */
     private function executeScriptOn(WebDriverElement $element, string $script, ...$args)
     {
+        $this->ensureClientIsStarted();
+
         try {
             return $this->client->executeScript($script, array_merge([$element], $args));
         } catch (RuntimeException $e) {
             throw new UnsupportedDriverActionException('JavaScript is not supported by %s.', $this, $e);
         }
+    }
+
+    /**
+     * @throws DriverException
+     *
+     * @psalm-assert !null $this->client
+     */
+    private function ensureClientIsStarted() : void
+    {
+        if ($this->isStarted()) {
+            return;
+        }
+
+        throw new DriverException('Client is not started.');
     }
 
     /**

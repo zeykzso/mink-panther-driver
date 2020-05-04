@@ -1,9 +1,16 @@
+services:
+	-
+		class: Lctrs\MinkPantherDriver\PHPStan\Type\PantherDriverClientTypeSpecifyingExtension
+		tags:
+			- phpstan.typeSpecifier.methodTypeSpecifyingExtension
+
 includes:
 	- phpstan-baseline.neon
 
 parameters:
 	level: max
 	paths:
+		- phpstan/
 		- src/
 		- test/
 		- update-license.php

@@ -194,129 +194,8 @@ jobs:
       - name: "Run vimeo/psalm"
         run: "vendor/bin/psalm --config=psalm.xml --shepherd --show-info=false --stats"
 
-  tests-chrome:
-    name: "Tests on Chrome stable with chromedriver"
-
-    runs-on: "ubuntu-latest"
-
-    strategy:
-      matrix:
-        php-version:
-          - "7.2"
-          - "7.3"
-          - "7.4"
-
-        dependencies:
-          - "lowest"
-          - "locked"
-          - "highest"
-
-        exclude:
-          # Covered by the "Code Coverage" job
-          - php-version: "7.4"
-            dependencies: "locked"
-
-    steps:
-      - name: "Checkout"
-        uses: "actions/checkout@v2"
-
-      - name: "Install PHP with extensions"
-        uses: "shivammathur/setup-php@v2"
-        with:
-          coverage: "none"
-          extensions: "${{ env.REQUIRED_PHP_EXTENSIONS }}"
-          php-version: "${{ matrix.php-version }}"
-
-      - name: "Determine composer cache directory"
-        id: "determine-composer-cache-directory"
-        run: "echo \"::set-output name=directory::$(composer config cache-dir)\""
-
-      - name: "Cache dependencies installed with composer"
-        uses: "actions/cache@v1"
-        with:
-          path: "${{ steps.determine-composer-cache-directory.outputs.directory }}"
-          key: "php-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-${{ hashFiles('composer.lock') }}"
-          restore-keys: "php-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-"
-
-      - name: "Install lowest dependencies from composer.json"
-        if: "matrix.dependencies == 'lowest'"
-        run: "composer update --no-interaction --no-progress --no-suggest --prefer-lowest"
-
-      - name: "Install locked dependencies from composer.lock"
-        if: "matrix.dependencies == 'locked'"
-        run: "composer install --no-interaction --no-progress --no-suggest"
-
-      - name: "Install highest dependencies from composer.json"
-        if: "matrix.dependencies == 'highest'"
-        run: "composer update --no-interaction --no-progress --no-suggest"
-
-      - name: "Run unit tests with phpunit/phpunit"
-        env:
-          PANTHER_CHROME_DRIVER_BINARY: "${{ env.CHROMEWEBDRIVER }}"
-        run: |
-          vendor/bin/mink-test-server > /dev/null 2>&1 &
-          vendor/bin/phpunit --configuration=phpunit.xml.dist
-
-  tests-firefox:
-    name: "Tests on Firefox stable with geckodriver"
-
-    runs-on: "ubuntu-latest"
-
-    strategy:
-      matrix:
-        php-version:
-          - "7.2"
-          - "7.3"
-          - "7.4"
-
-        dependencies:
-          - "lowest"
-          - "locked"
-          - "highest"
-
-    steps:
-      - name: "Checkout"
-        uses: "actions/checkout@v2"
-
-      - name: "Install PHP with extensions"
-        uses: "shivammathur/setup-php@v2"
-        with:
-          coverage: "none"
-          extensions: "${{ env.REQUIRED_PHP_EXTENSIONS }}"
-          php-version: "${{ matrix.php-version }}"
-
-      - name: "Determine composer cache directory"
-        id: "determine-composer-cache-directory"
-        run: "echo \"::set-output name=directory::$(composer config cache-dir)\""
-
-      - name: "Cache dependencies installed with composer"
-        uses: "actions/cache@v1"
-        with:
-          path: "${{ steps.determine-composer-cache-directory.outputs.directory }}"
-          key: "php-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-${{ hashFiles('composer.lock') }}"
-          restore-keys: "php-${{ matrix.php-version }}-composer-${{ matrix.dependencies }}-"
-
-      - name: "Install lowest dependencies from composer.json"
-        if: "matrix.dependencies == 'lowest'"
-        run: "composer update --no-interaction --no-progress --no-suggest --prefer-lowest"
-
-      - name: "Install locked dependencies from composer.lock"
-        if: "matrix.dependencies == 'locked'"
-        run: "composer install --no-interaction --no-progress --no-suggest"
-
-      - name: "Install highest dependencies from composer.json"
-        if: "matrix.dependencies == 'highest'"
-        run: "composer update --no-interaction --no-progress --no-suggest"
-
-      - name: "Run unit tests with phpunit/phpunit"
-        env:
-          PANTHER_FIREFOX_DRIVER_BINARY: "${{ env.GECKOWEBDRIVER }}"
-        run: |
-          vendor/bin/mink-test-server > /dev/null 2>&1 &
-          vendor/bin/phpunit --configuration=phpunit.xml.dist
-
-  tests-selenium:
-    name: "Tests on Selenium"
+  tests:
+    name: "Tests"
 
     runs-on: "ubuntu-latest"
 
@@ -324,6 +203,8 @@ jobs:
       matrix:
         browser:
           - "chrome"
+          - "firefox"
+          - "selenium"
 
         php-version:
           - "7.2"
@@ -337,10 +218,11 @@ jobs:
 
     steps:
       - name: "Initialize containers"
+        if: "matrix.browser == 'selenium'"
         run: |
           set -eux
 
-          docker pull selenium/standalone-${{ matrix.browser }}:latest
+          docker pull selenium/standalone-chrome:latest
           container_id=$(docker create \
             --name selenium \
             --network host \
@@ -350,7 +232,7 @@ jobs:
             --health-retries 5 \
             --volume ${{ runner.workspace }}:${{ runner.workspace }} \
             -e GITHUB_ACTIONS=true \
-            selenium/standalone-${{ matrix.browser }}:latest)
+            selenium/standalone-chrome:latest)
 
           echo ::set-env name=container_id::${container_id}
 
@@ -406,16 +288,24 @@ jobs:
         run: "composer update --no-interaction --no-progress --no-suggest"
 
       - name: "Run unit tests with phpunit/phpunit"
+        run: "vendor/bin/phpunit --configuration=test/Unit/phpunit.xml.dist"
+
+      - name: "Start web server"
+        if: "matrix.browser == 'selenium'"
+        run: "vendor/bin/mink-test-server > /dev/null 2>&1 &"
+
+      - name: "Run integration tests with phpunit/phpunit"
         env:
           BROWSER_NAME: "${{ matrix.browser }}"
+          PANTHER_WEB_SERVER_DIR: "${{ runner.workspace }}/vendor/mink/driver-testsuite/web-fixtures"
+          PANTHER_CHROME_DRIVER_BINARY: "${{ env.CHROMEWEBDRIVER }}"
+          PANTHER_FIREFOX_DRIVER_BINARY: "${{ env.GECKOWEBDRIVER }}"
           SELENIUM_HOST: "localhost"
           SELENIUM_PORT: "4444"
-        run: |
-          vendor/bin/mink-test-server > /dev/null 2>&1 &
-          vendor/bin/phpunit
+        run: "vendor/bin/phpunit --configuration=test/Integration/phpunit.xml.dist"
 
       - name: "Stop containers"
-        if: "always()"
+        if: "matrix.browser == 'selenium'"
         run: "docker rm --force ${container_id}"
 
   code-coverage:
@@ -473,10 +363,10 @@ jobs:
 
       - name: "Collect code coverage with pcov and phpunit/phpunit"
         env:
+          BROWSER_NAME: "chrome"
+          PANTHER_WEB_SERVER_DIR: "${{ runner.workspace }}/vendor/mink/driver-testsuite/web-fixtures"
           PANTHER_CHROME_DRIVER_BINARY: "${{ env.CHROMEWEBDRIVER }}"
-        run: |
-          vendor/bin/mink-test-server > /dev/null 2>&1 &
-          vendor/bin/phpunit --configuration=phpunit.xml.dist --coverage-clover=.build/logs/clover.xml
+        run: "vendor/bin/phpunit --configuration=test/Unit/phpunit.xml.dist --coverage-clover=.build/logs/clover.xml"
 
       - name: "Send code coverage report to Codecov.io"
         env:
@@ -493,9 +383,7 @@ jobs:
       - "coding-standards"
       - "dependency-analysis"
       - "static-code-analysis"
-      - "tests-chrome"
-      - "tests-firefox"
-      - "tests-selenium"
+      - "tests"
 
     if: >
       github.event_name == 'pull_request' &&

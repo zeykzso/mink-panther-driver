@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Lctrs\MinkPantherDriver\Test;
+namespace Lctrs\MinkPantherDriver\Test\Integration;
 
 use Behat\Mink\Tests\Driver\AbstractConfig;
 use Facebook\WebDriver\Chrome\ChromeOptions;
@@ -10,12 +10,11 @@ use Facebook\WebDriver\Remote\DesiredCapabilities;
 use Facebook\WebDriver\Remote\WebDriverBrowserType;
 use Lctrs\MinkPantherDriver\PantherDriver;
 use OndraM\CiDetector\CiDetector;
-use PHPUnit\Runner\AfterLastTestHook;
 use function sprintf;
 use function strpos;
 use const PHP_OS;
 
-final class Config extends AbstractConfig implements AfterLastTestHook
+final class Config extends AbstractConfig
 {
     /**
      * Creates an instance of the config.
@@ -52,17 +51,17 @@ final class Config extends AbstractConfig implements AfterLastTestHook
                 $desiredCapabilities = new DesiredCapabilities();
             }
 
-            return DriverRegistry::register(PantherDriver::createSeleniumDriver(
-                sprintf('http://%s:%s/wd/hub', $_SERVER['SELENIUM_HOST'], $_SERVER['SELENIUM_PORT']),
-                $desiredCapabilities
-            ));
+            return new PantherDriver(PantherDriver::SELENIUM, [
+                'host' => sprintf('http://%s:%s/wd/hub', $_SERVER['SELENIUM_HOST'], $_SERVER['SELENIUM_PORT']),
+                'capabilities' => $desiredCapabilities,
+            ]);
         }
 
-        if ($browser === WebDriverBrowserType::FIREFOX) {
-            return DriverRegistry::register(PantherDriver::createFirefoxDriver());
+        if ($browser === PantherDriver::FIREFOX) {
+            return new PantherDriver(PantherDriver::FIREFOX);
         }
 
-        return DriverRegistry::register(PantherDriver::createChromeDriver());
+        return new PantherDriver(PantherDriver::CHROME);
     }
 
     /**
@@ -94,10 +93,5 @@ final class Config extends AbstractConfig implements AfterLastTestHook
     protected function supportsCss() : bool
     {
         return true;
-    }
-
-    public function executeAfterLastTest() : void
-    {
-        DriverRegistry::stop();
     }
 }

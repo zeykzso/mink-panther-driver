@@ -17,6 +17,7 @@
     </plugins>
 
     <projectFiles>
+        <directory name="phpstan/" />
         <directory name="src/" />
         <directory name="test/" />
         <file name="update-license.php" />
