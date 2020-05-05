@@ -6,7 +6,6 @@ namespace Lctrs\MinkPantherDriver\Test\Integration;
 
 use Behat\Mink\Tests\Driver\AbstractConfig;
 use Facebook\WebDriver\Chrome\ChromeOptions;
-use Facebook\WebDriver\Remote\DesiredCapabilities;
 use Facebook\WebDriver\Remote\WebDriverBrowserType;
 use Lctrs\MinkPantherDriver\PantherDriver;
 use OndraM\CiDetector\CiDetector;
@@ -34,26 +33,18 @@ final class Config extends AbstractConfig
     {
         $browser = $_SERVER['BROWSER_NAME'] ?? WebDriverBrowserType::CHROME;
 
-        if ($_SERVER['SELENIUM_HOST'] ?? false) {
-            if ($browser === WebDriverBrowserType::FIREFOX) {
-                $desiredCapabilities = DesiredCapabilities::firefox();
-            } elseif ($browser === WebDriverBrowserType::CHROME) {
-                $options = new ChromeOptions();
-                $options->addArguments([
-                    '--headless',
-                    '--window-size=1200,1100',
-                    '--disable-gpu',
-                    '--no-sandbox',
-                ]);
-
-                $desiredCapabilities = $options->toCapabilities();
-            } else {
-                $desiredCapabilities = new DesiredCapabilities();
-            }
+        if ($browser === PantherDriver::SELENIUM) {
+            $options = new ChromeOptions();
+            $options->addArguments([
+                '--headless',
+                '--window-size=1200,1100',
+                '--disable-gpu',
+                '--no-sandbox',
+            ]);
 
             return new PantherDriver(PantherDriver::SELENIUM, [
                 'host' => sprintf('http://%s:%s/wd/hub', $_SERVER['SELENIUM_HOST'], $_SERVER['SELENIUM_PORT']),
-                'capabilities' => $desiredCapabilities,
+                'capabilities' => $options->toCapabilities(),
             ]);
         }
 
